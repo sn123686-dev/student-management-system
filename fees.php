@@ -11,6 +11,9 @@ $students = mysqli_query($conn, "SELECT * FROM students WHERE status='active' OR
 
 // Handle Add Fee
 if (isset($_POST['add_fee'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
     $student_id  = (int) $_POST['student_id'];
     $amount      = (float) $_POST['amount'];
     $paid_amount = (float) ($_POST['paid_amount'] ?? 0);
@@ -28,7 +31,10 @@ if (isset($_POST['add_fee'])) {
         mysqli_stmt_bind_param($stmt, "iddsss", $student_id, $amount, $paid_amount, $due_date, $status, $description);
 
         if (mysqli_stmt_execute($stmt)) {
-            $sname = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM students WHERE id = $student_id"))['name'];
+            $sname_stmt = mysqli_prepare($conn, "SELECT name FROM students WHERE id = ?");
+            mysqli_stmt_bind_param($sname_stmt, "i", $student_id);
+            mysqli_stmt_execute($sname_stmt);
+            $sname = mysqli_fetch_assoc(mysqli_stmt_get_result($sname_stmt))['name'] ?? 'Unknown';
             logActivity($conn, "Added fee record for: $sname — $amount PKR");
             $success = "Fee record added successfully!";
         } else {
@@ -39,8 +45,10 @@ if (isset($_POST['add_fee'])) {
 
 // Handle Delete
 if (isset($_GET['delete'])) {
-    $id = (int) $_GET['delete'];
-    mysqli_query($conn, "DELETE FROM fees WHERE id = $id");
+    $id       = (int) $_GET['delete'];
+    $del_stmt = mysqli_prepare($conn, "DELETE FROM fees WHERE id = ?");
+    mysqli_stmt_bind_param($del_stmt, "i", $id);
+    mysqli_stmt_execute($del_stmt);
     logActivity($conn, "Deleted a fee record");
     header('Location: fees.php?success=deleted');
     exit();
@@ -48,10 +56,15 @@ if (isset($_GET['delete'])) {
 
 // Handle Mark as Paid
 if (isset($_GET['paid'])) {
-    $id = (int) $_GET['paid'];
-    $fee = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM fees WHERE id = $id"));
+    $id      = (int) $_GET['paid'];
+    $fee_stmt = mysqli_prepare($conn, "SELECT id FROM fees WHERE id = ?");
+    mysqli_stmt_bind_param($fee_stmt, "i", $id);
+    mysqli_stmt_execute($fee_stmt);
+    $fee = mysqli_fetch_assoc(mysqli_stmt_get_result($fee_stmt));
     if ($fee) {
-        mysqli_query($conn, "UPDATE fees SET paid_amount = amount, status = 'paid' WHERE id = $id");
+        $upd_stmt = mysqli_prepare($conn, "UPDATE fees SET paid_amount = amount, status = 'paid' WHERE id = ?");
+        mysqli_stmt_bind_param($upd_stmt, "i", $id);
+        mysqli_stmt_execute($upd_stmt);
         logActivity($conn, "Marked fee as paid (ID: $id)");
         header('Location: fees.php?success=paid');
         exit();
@@ -138,6 +151,7 @@ $fees = mysqli_query($conn, "
                 <h2>➕ Add Fee Record</h2>
             </div>
             <form method="POST" action="fees.php">
+                <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
                 <div class="form-group">
                     <label class="form-label">Student *</label>
                     <select name="student_id" class="form-control" required>

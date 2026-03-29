@@ -5,6 +5,9 @@ $page_title = "Activity Log";
 
 // Clear logs
 if (isset($_POST['clear_logs'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
     mysqli_query($conn, "DELETE FROM activity_log");
     header('Location: activity.php?success=cleared');
     exit();
@@ -12,12 +15,15 @@ if (isset($_POST['clear_logs'])) {
 
 // Pagination
 $per_page = 15;
-$page     = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$page     = max(1, isset($_GET['page']) ? (int)$_GET['page'] : 1);
 $offset   = ($page - 1) * $per_page;
 
 $total_rows  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM activity_log"))['count'];
 $total_pages = ceil($total_rows / $per_page);
-$logs        = mysqli_query($conn, "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT $per_page OFFSET $offset");
+$logs_stmt   = mysqli_prepare($conn, "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ? OFFSET ?");
+mysqli_stmt_bind_param($logs_stmt, "ii", $per_page, $offset);
+mysqli_stmt_execute($logs_stmt);
+$logs = mysqli_stmt_get_result($logs_stmt);
 ?>
 
 <?php require_once 'includes/header.php'; ?>
@@ -32,6 +38,7 @@ $logs        = mysqli_query($conn, "SELECT * FROM activity_log ORDER BY created_
         </div>
         <div class="topbar-right">
             <form method="POST" action="activity.php" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
                 <button type="submit" name="clear_logs" class="btn btn-danger"
                     onclick="return confirm('Clear all logs?')">🗑️ Clear Logs</button>
             </form>

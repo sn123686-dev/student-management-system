@@ -12,6 +12,9 @@ $courses  = mysqli_query($conn, "SELECT * FROM courses ORDER BY name ASC");
 
 // Handle Add Grade
 if (isset($_POST['add_grade'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
     $student_id = (int) $_POST['student_id'];
     $course_id  = (int) $_POST['course_id'];
     $marks      = (float) $_POST['marks'];
@@ -25,7 +28,10 @@ if (isset($_POST['add_grade'])) {
         mysqli_stmt_bind_param($stmt, "iidss", $student_id, $course_id, $marks, $grade, $semester);
         if (mysqli_stmt_execute($stmt)) {
             // Get student name for log
-            $sname = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM students WHERE id = $student_id"))['name'];
+            $sname_stmt = mysqli_prepare($conn, "SELECT name FROM students WHERE id = ?");
+            mysqli_stmt_bind_param($sname_stmt, "i", $student_id);
+            mysqli_stmt_execute($sname_stmt);
+            $sname = mysqli_fetch_assoc(mysqli_stmt_get_result($sname_stmt))['name'] ?? 'Unknown';
             logActivity($conn, "Added grade for: $sname — $marks marks ($grade)");
             $success = "Grade added successfully!";
         } else {
@@ -36,8 +42,10 @@ if (isset($_POST['add_grade'])) {
 
 // Handle Delete
 if (isset($_GET['delete'])) {
-    $id = (int) $_GET['delete'];
-    mysqli_query($conn, "DELETE FROM grades WHERE id = $id");
+    $id       = (int) $_GET['delete'];
+    $del_stmt = mysqli_prepare($conn, "DELETE FROM grades WHERE id = ?");
+    mysqli_stmt_bind_param($del_stmt, "i", $id);
+    mysqli_stmt_execute($del_stmt);
     logActivity($conn, "Deleted a grade record");
     header('Location: grades.php?success=deleted');
     exit();
@@ -124,6 +132,7 @@ $fail_count   = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count
                 <h2>➕ Add Grade</h2>
             </div>
             <form method="POST" action="grades.php">
+                <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
                 <div class="form-group">
                     <label class="form-label">Student *</label>
                     <select name="student_id" class="form-control" required>

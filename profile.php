@@ -21,31 +21,59 @@ $fee_pct        = getFeePercentage($conn, $id);
 $grade          = calculateGrade($avg_marks);
 
 // Grades
-$grades = mysqli_query($conn, "
+$grades_stmt = mysqli_prepare($conn, "
     SELECT g.*, c.name as course_name
     FROM grades g
     JOIN courses c ON g.course_id = c.id
-    WHERE g.student_id = $id
+    WHERE g.student_id = ?
     ORDER BY g.created_at DESC
 ");
+mysqli_stmt_bind_param($grades_stmt, "i", $id);
+mysqli_stmt_execute($grades_stmt);
+$grades = mysqli_stmt_get_result($grades_stmt);
 
 // Attendance
-$attendance = mysqli_query($conn, "
+$att_stmt = mysqli_prepare($conn, "
     SELECT * FROM attendance
-    WHERE student_id = $id
+    WHERE student_id = ?
     ORDER BY date DESC
     LIMIT 10
 ");
+mysqli_stmt_bind_param($att_stmt, "i", $id);
+mysqli_stmt_execute($att_stmt);
+$attendance = mysqli_stmt_get_result($att_stmt);
 
 // Fees
-$fees       = mysqli_query($conn, "SELECT * FROM fees WHERE student_id = $id ORDER BY created_at DESC");
-$total_fees = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as total, SUM(paid_amount) as paid FROM fees WHERE student_id = $id"));
+$fees_stmt = mysqli_prepare($conn, "SELECT * FROM fees WHERE student_id = ? ORDER BY created_at DESC");
+mysqli_stmt_bind_param($fees_stmt, "i", $id);
+mysqli_stmt_execute($fees_stmt);
+$fees = mysqli_stmt_get_result($fees_stmt);
+
+$tf_stmt = mysqli_prepare($conn, "SELECT SUM(amount) as total, SUM(paid_amount) as paid FROM fees WHERE student_id = ?");
+mysqli_stmt_bind_param($tf_stmt, "i", $id);
+mysqli_stmt_execute($tf_stmt);
+$total_fees = mysqli_fetch_assoc(mysqli_stmt_get_result($tf_stmt));
 
 // Attendance counts
-$total_att   = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = $id"))['count'];
-$present_att = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = $id AND status='present'"))['count'];
-$absent_att  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = $id AND status='absent'"))['count'];
-$late_att    = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = $id AND status='late'"))['count'];
+$ta_stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = ?");
+mysqli_stmt_bind_param($ta_stmt, "i", $id);
+mysqli_stmt_execute($ta_stmt);
+$total_att = mysqli_fetch_assoc(mysqli_stmt_get_result($ta_stmt))['count'];
+
+$pa_stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status='present'");
+mysqli_stmt_bind_param($pa_stmt, "i", $id);
+mysqli_stmt_execute($pa_stmt);
+$present_att = mysqli_fetch_assoc(mysqli_stmt_get_result($pa_stmt))['count'];
+
+$aa_stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status='absent'");
+mysqli_stmt_bind_param($aa_stmt, "i", $id);
+mysqli_stmt_execute($aa_stmt);
+$absent_att = mysqli_fetch_assoc(mysqli_stmt_get_result($aa_stmt))['count'];
+
+$la_stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status='late'");
+mysqli_stmt_bind_param($la_stmt, "i", $id);
+mysqli_stmt_execute($la_stmt);
+$late_att = mysqli_fetch_assoc(mysqli_stmt_get_result($la_stmt))['count'];
 ?>
 
 <?php require_once 'includes/header.php'; ?>

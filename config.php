@@ -12,7 +12,7 @@ define('APP_URL', 'http://localhost/student-management-system');
 define('APP_VERSION', '2.0');
 
 // ===== UPLOADS =====
-define('UPLOAD_PATH', 'C:/xampp/htdocs/student-management-system/uploads/students/');
+define('UPLOAD_PATH', __DIR__ . '/uploads/students/');
 define('UPLOAD_URL', APP_URL . '/uploads/students/');
 define('MAX_FILE_SIZE', 2 * 1024 * 1024);
 define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'gif', 'webp']);
@@ -55,18 +55,20 @@ function timeAgo($datetime) {
 }
 
 function generateStudentID($conn) {
-    $year = date('Y');
-    // Get the highest existing number to avoid duplicates
-    $result = mysqli_fetch_assoc(mysqli_query($conn, "SELECT student_id FROM students WHERE student_id LIKE 'STU-$year-%' ORDER BY id DESC LIMIT 1"));
-    
+    $year    = date('Y');
+    $pattern = "STU-$year-%";
+    $stmt    = mysqli_prepare($conn, "SELECT student_id FROM students WHERE student_id LIKE ? ORDER BY id DESC LIMIT 1");
+    mysqli_stmt_bind_param($stmt, "s", $pattern);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+
     if ($result && !empty($result['student_id'])) {
-        // Extract the number from the last ID and increment
         $parts  = explode('-', $result['student_id']);
         $number = (int) end($parts) + 1;
     } else {
         $number = 1;
     }
-    
+
     return "STU-$year-" . str_pad($number, 4, '0', STR_PAD_LEFT);
 }
 
@@ -86,6 +88,19 @@ function calculateGPA($marks) {
     if ($marks >= 60) return 2.0;
     if ($marks >= 50) return 1.0;
     return 0.0;
+}
+
+// ===== CSRF FUNCTIONS =====
+
+function generateCsrfToken() {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function verifyCsrfToken($token) {
+    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], (string)$token);
 }
 
 // ===== AUTH FUNCTIONS =====
@@ -120,22 +135,36 @@ function updateStudentLastLogin($conn, $student_id) {
 
 // Get student attendance percentage
 function getAttendancePercentage($conn, $student_id) {
-    $total   = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = $student_id"))['count'];
-    $present = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = $student_id AND status = 'present'"))['count'];
+    $stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = ?");
+    mysqli_stmt_bind_param($stmt, "i", $student_id);
+    mysqli_stmt_execute($stmt);
+    $total = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt))['count'];
+
+    $stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM attendance WHERE student_id = ? AND status = 'present'");
+    mysqli_stmt_bind_param($stmt, "i", $student_id);
+    mysqli_stmt_execute($stmt);
+    $present = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt))['count'];
+
     if ($total == 0) return 0;
     return round(($present / $total) * 100);
 }
 
 // Get student average marks
 function getAverageMarks($conn, $student_id) {
-    $result = mysqli_fetch_assoc(mysqli_query($conn, "SELECT AVG(marks) as avg FROM grades WHERE student_id = $student_id"));
+    $stmt = mysqli_prepare($conn, "SELECT AVG(marks) as avg FROM grades WHERE student_id = ?");
+    mysqli_stmt_bind_param($stmt, "i", $student_id);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
     return round($result['avg'] ?? 0, 1);
 }
 
 // Get student fee percentage paid
 function getFeePercentage($conn, $student_id) {
-    $result = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as total, SUM(paid_amount) as paid FROM fees WHERE student_id = $student_id"));
-    if (!$result['total'] || $result['total'] == 0) return 100;
+    $stmt = mysqli_prepare($conn, "SELECT SUM(amount) as total, SUM(paid_amount) as paid FROM fees WHERE student_id = ?");
+    mysqli_stmt_bind_param($stmt, "i", $student_id);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    if (!$result['total'] || $result['total'] === 0) return 0;
     return round(($result['paid'] / $result['total']) * 100);
 }
 ?>
