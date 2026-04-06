@@ -20,7 +20,7 @@ A fully-featured, professional Learning Management System (LMS) built with pure 
 
 ### 👨‍🎓 Student Management
 - Add, Edit, and Delete students
-- Auto-generated Student ID (STU-YYYY-XXXX)
+- Auto-generated Student ID 
 - Profile photo upload
 - Student status (Active/Inactive/Graduated)
 - Search by name, email, or Student ID
