@@ -19,11 +19,11 @@ A fully-featured, professional Learning Management System (LMS) built with pure 
 - Separate dashboards for Admin and Student
 
 ### 👨‍🎓 Student Management
-- Add, Edit, Delete students
+- Add, Edit, and Delete students
 - Auto-generated Student ID (STU-YYYY-XXXX)
 - Profile photo upload
 - Student status (Active/Inactive/Graduated)
-- Search by name, email or Student ID
+- Search by name, email, or Student ID
 - Filter by status and course
 - Pagination (10 per page)
 - Bulk delete
