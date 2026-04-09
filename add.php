@@ -10,6 +10,9 @@ $success = "";
 $courses = mysqli_query($conn, "SELECT * FROM courses ORDER BY name ASC");
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
 
     $name     = sanitize($_POST['name'] ?? '');
     $email    = sanitize($_POST['email'] ?? '');
@@ -110,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <h2>📝 Student Details</h2>
             </div>
             <form method="POST" action="add.php" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
 
                 <div class="form-grid">
                     <div class="form-group">

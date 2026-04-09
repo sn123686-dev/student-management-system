@@ -4,23 +4,44 @@ requireAdmin();
 $page_title = "Students";
 
 // Search & Filter
-$search  = isset($_GET['search']) ? sanitize($_GET['search']) : '';
-$filter  = isset($_GET['filter']) ? sanitize($_GET['filter']) : '';
-$course  = isset($_GET['course']) ? sanitize($_GET['course']) : '';
+$search  = $_GET['search'] ?? '';
+$filter  = in_array($_GET['filter'] ?? '', ['active','inactive','graduated']) ? $_GET['filter'] : '';
+$course  = $_GET['course'] ?? '';
 
 // Pagination
 $per_page = 10;
-$page     = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$page     = max(1, (int)(isset($_GET['page']) ? $_GET['page'] : 1));
 $offset   = ($page - 1) * $per_page;
 
-$where = "WHERE 1=1";
-if (!empty($search)) $where .= " AND (name LIKE '%$search%' OR email LIKE '%$search%' OR student_id LIKE '%$search%')";
-if (!empty($filter)) $where .= " AND status = '$filter'";
-if (!empty($course)) $where .= " AND course = '$course'";
+$where        = "WHERE 1=1";
+$where_params = [];
+$where_types  = "";
+
+if (!empty($search)) {
+    $where       .= " AND (name LIKE ? OR email LIKE ? OR student_id LIKE ?)";
+    $like         = "%$search%";
+    $where_types .= "sss";
+    $where_params = array_merge($where_params, [$like, $like, $like]);
+}
+if (!empty($filter)) {
+    $where       .= " AND status = ?";
+    $where_types .= "s";
+    $where_params[] = $filter;
+}
+if (!empty($course)) {
+    $where       .= " AND course = ?";
+    $where_types .= "s";
+    $where_params[] = $course;
+}
 
 // Export CSV
 if (isset($_GET['export']) && $_GET['export'] == 'csv') {
-    $export = mysqli_query($conn, "SELECT * FROM students $where ORDER BY created_at DESC");
+    $export_stmt = mysqli_prepare($conn, "SELECT * FROM students $where ORDER BY created_at DESC");
+    if ($where_types !== '') {
+        mysqli_stmt_bind_param($export_stmt, $where_types, ...$where_params);
+    }
+    mysqli_stmt_execute($export_stmt);
+    $export = mysqli_stmt_get_result($export_stmt);
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="students_' . date('Y-m-d') . '.csv"');
     $out = fopen('php://output', 'w');
@@ -34,6 +55,9 @@ if (isset($_GET['export']) && $_GET['export'] == 'csv') {
 
 // Bulk Delete
 if (isset($_POST['bulk_delete']) && !empty($_POST['selected'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
     $ids     = array_map('intval', $_POST['selected']);
     $ids_str = implode(',', $ids);
     mysqli_query($conn, "DELETE FROM students WHERE id IN ($ids_str)");
@@ -42,10 +66,22 @@ if (isset($_POST['bulk_delete']) && !empty($_POST['selected'])) {
     exit();
 }
 
-$total_rows  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM students $where"))['count'];
+$count_stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM students $where");
+if ($where_types !== '') {
+    mysqli_stmt_bind_param($count_stmt, $where_types, ...$where_params);
+}
+mysqli_stmt_execute($count_stmt);
+$total_rows  = mysqli_fetch_assoc(mysqli_stmt_get_result($count_stmt))['count'];
 $total_pages = ceil($total_rows / $per_page);
-$students    = mysqli_query($conn, "SELECT * FROM students $where ORDER BY created_at DESC LIMIT $per_page OFFSET $offset");
-$courses     = mysqli_query($conn, "SELECT DISTINCT course FROM students ORDER BY course ASC");
+
+$list_stmt = mysqli_prepare($conn, "SELECT * FROM students $where ORDER BY created_at DESC LIMIT ? OFFSET ?");
+$list_types = $where_types . "ii";
+$list_params = array_merge($where_params, [$per_page, $offset]);
+mysqli_stmt_bind_param($list_stmt, $list_types, ...$list_params);
+mysqli_stmt_execute($list_stmt);
+$students = mysqli_stmt_get_result($list_stmt);
+
+$courses  = mysqli_query($conn, "SELECT DISTINCT course FROM students ORDER BY course ASC");
 ?>
 
 <?php require_once 'includes/header.php'; ?>
@@ -67,7 +103,7 @@ $courses     = mysqli_query($conn, "SELECT DISTINCT course FROM students ORDER B
     </div>
 
     <?php if (isset($_GET['success'])): ?>
-        <div class="alert alert-success">✅ Student <?php echo $_GET['success']; ?> successfully!</div>
+        <div class="alert alert-success">✅ Student <?php echo htmlspecialchars($_GET['success']); ?> successfully!</div>
     <?php endif; ?>
 
     <div class="card">
@@ -81,19 +117,19 @@ $courses     = mysqli_query($conn, "SELECT DISTINCT course FROM students ORDER B
             <form method="GET" action="students.php" style="display:flex; gap:10px; flex:1; flex-wrap:wrap;">
                 <div class="search-box">
                     <input type="text" name="search" placeholder="Search by name, email or ID..."
-                        value="<?php echo $search; ?>">
+                        value="<?php echo htmlspecialchars($search); ?>">
                 </div>
                 <select name="filter" class="filter-select">
                     <option value="">All Status</option>
-                    <option value="active"    <?php echo $filter=='active'    ? 'selected':''; ?>>Active</option>
-                    <option value="inactive"  <?php echo $filter=='inactive'  ? 'selected':''; ?>>Inactive</option>
-                    <option value="graduated" <?php echo $filter=='graduated' ? 'selected':''; ?>>Graduated</option>
+                    <option value="active"    <?php echo $filter==='active'    ? 'selected':''; ?>>Active</option>
+                    <option value="inactive"  <?php echo $filter==='inactive'  ? 'selected':''; ?>>Inactive</option>
+                    <option value="graduated" <?php echo $filter==='graduated' ? 'selected':''; ?>>Graduated</option>
                 </select>
                 <select name="course" class="filter-select">
                     <option value="">All Courses</option>
                     <?php while ($c = mysqli_fetch_assoc($courses)): ?>
                         <option value="<?php echo htmlspecialchars($c['course']); ?>"
-                            <?php echo $course == $c['course'] ? 'selected' : ''; ?>>
+                            <?php echo $course === $c['course'] ? 'selected' : ''; ?>>
                             <?php echo htmlspecialchars($c['course']); ?>
                         </option>
                     <?php endwhile; ?>
@@ -107,6 +143,7 @@ $courses     = mysqli_query($conn, "SELECT DISTINCT course FROM students ORDER B
 
         <!-- Bulk Form -->
         <form method="POST" action="students.php">
+            <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <div style="display:flex; align-items:center; gap:10px;">
                     <input type="checkbox" id="selectAll" onchange="toggleAll(this)">

@@ -18,30 +18,42 @@ $fee_pct        = getFeePercentage($conn, $student_id);
 $grade          = calculateGrade($avg_marks);
 
 // Grades per course
-$grades = mysqli_query($conn, "
+$grades_stmt = mysqli_prepare($conn, "
     SELECT g.*, c.name as course_name
     FROM grades g
     JOIN courses c ON g.course_id = c.id
-    WHERE g.student_id = $student_id
+    WHERE g.student_id = ?
     ORDER BY g.created_at DESC
 ");
+mysqli_stmt_bind_param($grades_stmt, "i", $student_id);
+mysqli_stmt_execute($grades_stmt);
+$grades = mysqli_stmt_get_result($grades_stmt);
 
 // Recent attendance
-$attendance = mysqli_query($conn, "
+$att_stmt = mysqli_prepare($conn, "
     SELECT * FROM attendance
-    WHERE student_id = $student_id
+    WHERE student_id = ?
     ORDER BY date DESC
     LIMIT 10
 ");
+mysqli_stmt_bind_param($att_stmt, "i", $student_id);
+mysqli_stmt_execute($att_stmt);
+$attendance = mysqli_stmt_get_result($att_stmt);
 
 // Fee records
-$fees = mysqli_query($conn, "
+$fees_stmt = mysqli_prepare($conn, "
     SELECT * FROM fees
-    WHERE student_id = $student_id
+    WHERE student_id = ?
     ORDER BY created_at DESC
 ");
+mysqli_stmt_bind_param($fees_stmt, "i", $student_id);
+mysqli_stmt_execute($fees_stmt);
+$fees = mysqli_stmt_get_result($fees_stmt);
 
-$total_fees = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as total, SUM(paid_amount) as paid FROM fees WHERE student_id = $student_id"));
+$tf_stmt = mysqli_prepare($conn, "SELECT SUM(amount) as total, SUM(paid_amount) as paid FROM fees WHERE student_id = ?");
+mysqli_stmt_bind_param($tf_stmt, "i", $student_id);
+mysqli_stmt_execute($tf_stmt);
+$total_fees = mysqli_fetch_assoc(mysqli_stmt_get_result($tf_stmt));
 ?>
 
 <!DOCTYPE html>

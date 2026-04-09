@@ -6,15 +6,25 @@ $page_title = "Attendance";
 $error   = "";
 $success = "";
 
+// Validate and sanitize date input
+function isValidDate($date) {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return false;
+    $d = DateTime::createFromFormat('Y-m-d', $date);
+    return $d && $d->format('Y-m-d') === $date;
+}
+
 // Selected date
-$selected_date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+$selected_date = (isset($_GET['date']) && isValidDate($_GET['date'])) ? $_GET['date'] : date('Y-m-d');
 
 // Get students
 $students = mysqli_query($conn, "SELECT * FROM students WHERE status='active' ORDER BY name ASC");
 
 // Handle Save Attendance
 if (isset($_POST['save_attendance'])) {
-    $date       = $_POST['date'] ?? date('Y-m-d');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
+    $date       = (isset($_POST['date']) && isValidDate($_POST['date'])) ? $_POST['date'] : date('Y-m-d');
     $attendance = $_POST['attendance'] ?? [];
 
     if (!empty($attendance)) {
@@ -23,10 +33,15 @@ if (isset($_POST['save_attendance'])) {
             $status     = in_array($status, ['present','absent','late']) ? $status : 'absent';
 
             // Check if already exists
-            $check = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM attendance WHERE student_id = $student_id AND date = '$date'"));
+            $check_stmt = mysqli_prepare($conn, "SELECT id FROM attendance WHERE student_id = ? AND date = ?");
+            mysqli_stmt_bind_param($check_stmt, "is", $student_id, $date);
+            mysqli_stmt_execute($check_stmt);
+            $check = mysqli_fetch_assoc(mysqli_stmt_get_result($check_stmt));
 
             if ($check) {
-                mysqli_query($conn, "UPDATE attendance SET status = '$status' WHERE student_id = $student_id AND date = '$date'");
+                $upd_stmt = mysqli_prepare($conn, "UPDATE attendance SET status = ? WHERE student_id = ? AND date = ?");
+                mysqli_stmt_bind_param($upd_stmt, "sis", $status, $student_id, $date);
+                mysqli_stmt_execute($upd_stmt);
             } else {
                 $stmt = mysqli_prepare($conn, "INSERT INTO attendance (student_id, date, status) VALUES (?, ?, ?)");
                 mysqli_stmt_bind_param($stmt, "iss", $student_id, $date, $status);
@@ -41,15 +56,27 @@ if (isset($_POST['save_attendance'])) {
 
 // Get existing attendance for selected date
 $existing = [];
-$att_result = mysqli_query($conn, "SELECT student_id, status FROM attendance WHERE date = '$selected_date'");
+$att_stmt = mysqli_prepare($conn, "SELECT student_id, status FROM attendance WHERE date = ?");
+mysqli_stmt_bind_param($att_stmt, "s", $selected_date);
+mysqli_stmt_execute($att_stmt);
+$att_result = mysqli_stmt_get_result($att_stmt);
 while ($a = mysqli_fetch_assoc($att_result)) {
     $existing[$a['student_id']] = $a['status'];
 }
 
 // Attendance stats for selected date
-$present_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE date='$selected_date' AND status='present'"))['count'];
-$absent_count  = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE date='$selected_date' AND status='absent'"))['count'];
-$late_count    = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE date='$selected_date' AND status='late'"))['count'];
+$stat_stmt = mysqli_prepare($conn, "SELECT status, COUNT(*) as count FROM attendance WHERE date = ? GROUP BY status");
+mysqli_stmt_bind_param($stat_stmt, "s", $selected_date);
+mysqli_stmt_execute($stat_stmt);
+$stat_result   = mysqli_stmt_get_result($stat_stmt);
+$present_count = 0;
+$absent_count  = 0;
+$late_count    = 0;
+while ($stat = mysqli_fetch_assoc($stat_result)) {
+    if ($stat['status'] === 'present') $present_count = $stat['count'];
+    elseif ($stat['status'] === 'absent') $absent_count  = $stat['count'];
+    elseif ($stat['status'] === 'late')   $late_count    = $stat['count'];
+}
 
 // Overall stats
 $total_present = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM attendance WHERE status='present'"))['count'];
@@ -134,7 +161,8 @@ $history = mysqli_query($conn, "
             </div>
 
             <form method="POST" action="attendance.php">
-                <input type="hidden" name="date" value="<?php echo $selected_date; ?>">
+                <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
+                <input type="hidden" name="date" value="<?php echo htmlspecialchars($selected_date); ?>">
 
                 <!-- Quick Actions -->
                 <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">

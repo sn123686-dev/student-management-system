@@ -8,6 +8,9 @@ $success = "";
 
 // Handle Add
 if (isset($_POST['add_course'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        die("Invalid CSRF token.");
+    }
     $name        = sanitize($_POST['name'] ?? '');
     $code        = sanitize($_POST['code'] ?? '');
     $description = sanitize($_POST['description'] ?? '');
@@ -28,16 +31,27 @@ if (isset($_POST['add_course'])) {
 
 // Handle Delete
 if (isset($_GET['delete'])) {
-    $id  = (int) $_GET['delete'];
-    $cat = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM courses WHERE id = $id"))['name'];
-    $has = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM students WHERE course = '$cat'"))['count'];
-    if ($has > 0) {
-        $error = "Cannot delete — $has students enrolled in this course!";
-    } else {
-        mysqli_query($conn, "DELETE FROM courses WHERE id = $id");
-        logActivity($conn, "Deleted course: $cat");
-        header('Location: courses.php?success=deleted');
-        exit();
+    $id       = (int) $_GET['delete'];
+    $cat_stmt = mysqli_prepare($conn, "SELECT name FROM courses WHERE id = ?");
+    mysqli_stmt_bind_param($cat_stmt, "i", $id);
+    mysqli_stmt_execute($cat_stmt);
+    $cat_row = mysqli_fetch_assoc(mysqli_stmt_get_result($cat_stmt));
+    if ($cat_row) {
+        $cat      = $cat_row['name'];
+        $has_stmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM students WHERE course = ?");
+        mysqli_stmt_bind_param($has_stmt, "s", $cat);
+        mysqli_stmt_execute($has_stmt);
+        $has = mysqli_fetch_assoc(mysqli_stmt_get_result($has_stmt))['count'];
+        if ($has > 0) {
+            $error = "Cannot delete — $has students enrolled in this course!";
+        } else {
+            $del_stmt = mysqli_prepare($conn, "DELETE FROM courses WHERE id = ?");
+            mysqli_stmt_bind_param($del_stmt, "i", $id);
+            mysqli_stmt_execute($del_stmt);
+            logActivity($conn, "Deleted course: $cat");
+            header('Location: courses.php?success=deleted');
+            exit();
+        }
     }
 }
 
@@ -84,6 +98,7 @@ $courses = mysqli_query($conn, "
                 <h2>➕ Add Course</h2>
             </div>
             <form method="POST" action="courses.php">
+                <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
                 <div class="form-group">
                     <label class="form-label">Course Name *</label>
                     <input type="text" name="name" class="form-control"

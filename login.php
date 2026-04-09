@@ -130,11 +130,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="auth-footer">
         Are you a student? <a href="<?php echo APP_URL; ?>/student/login.php">Login here</a>
     </div>
-
-    <div style="margin-top:20px; padding:15px; background:var(--gray-light); border-radius:var(--radius); font-size:12px; color:var(--gray); text-align:center;">
-        <strong>Default credentials:</strong><br>
-        Email: admin@edupro.com | Password: password
-    </div>
 </div>
 
 <?php require_once 'includes/footer.php'; ?>
